@@ -7,7 +7,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>RomperCartas</AssemblyName>
     <RootNamespace>RomperCartas</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <HdtDir>$(LOCALAPPDATA)\HearthstoneDeckTracker\current</HdtDir>
@@ -39,10 +39,9 @@
     <Reference Include="System.Net.Http" />
   </ItemGroup>
 
-  <!-- Archivos que acompañan al .dll: Plugins\RomperCartas\datos y Plugins\RomperCartas\scripts -->
+  <!-- Archivos que acompañan al .dll: Plugins\RomperCartas\datos -->
   <ItemGroup>
     <Incluidos Include="..\..\datos\*.json" Carpeta="datos" />
-    <Incluidos Include="..\..\scripts\*.py;..\..\scripts\requirements.txt" Carpeta="scripts" />
   </ItemGroup>
 
   <!-- dotnet build -c Release -p:Instalar=true copia el plugin y sus archivos a la carpeta de HDT -->

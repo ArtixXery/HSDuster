@@ -20,7 +20,7 @@ Al entrar a la colección de Hearthstone, cada carta de la página muestra un le
 Además:
 
 - Se recalcula solo cuando cambia tu colección (al abrir sobres, crear o romper cartas). La colección se lee de HDT, no hace falta exportar nada.
-- Descarga las estadísticas de uso de Wild una vez al día, en segundo plano.
+- Descarga las estadísticas de uso de Wild una vez al día, en segundo plano, con la misma conexión a HSReplay que usa HDT. No hace falta instalar nada más.
 - Desde el menú del plugin en HDT se abre una **lista completa** con filtros por estado, clase, maná y búsqueda, y se puede exportar a CSV.
 
 ## Cómo decide
@@ -33,13 +33,13 @@ Para cada carta solo de Wild se toma su **% de mazos en que aparece** según [HS
 
 Si todavía no hay estadísticas descargadas, el plugin nunca recomienda romper: marca esas cartas como dudosas.
 
+Qué cartas son de Estándar y cuáles de Wild se calcula solo: un set es de Estándar cuando al menos la mitad de sus cartas tienen uso en las estadísticas de Estándar de HSReplay. Los datos de las cartas (sets, rarezas, copias regaladas) son los que HDT ya tiene cargados ([HearthSim/hsdata](https://github.com/HearthSim/hsdata) a través de HearthstoneJSON). Con cada descarga se regenera `reglas.json`; el plugin trae uno ya generado por si todavía no hay datos.
+
 Los umbrales se cambian en `%APPDATA%\HearthstoneDeckTracker\RomperCartas\config.json` (`UmbralConservar`, `UmbralDudosa`).
 
 ## Requisitos
 
-- Windows y Hearthstone Deck Tracker.
-- **Python 3.10 o más nuevo** en el PATH, con las dependencias de `scripts\requirements.txt`.
-- **Firefox**. Las estadísticas gratis de HSReplay solo responden a navegadores, así que se descargan con Firefox en modo invisible (headless) y un perfil temporal limpio. No usa tu sesión ni tus cookies.
+- Windows y Hearthstone Deck Tracker. Nada más: no hace falta Python ni ningún navegador.
 
 ## Instalación
 
@@ -50,13 +50,8 @@ Los umbrales se cambian en `%APPDATA%\HearthstoneDeckTracker\RomperCartas\config
      RomperCartas.dll
      RomperCartas\
        datos\    (reglas.json, mazos_hsguru.json)
-       scripts\  (actualizar_datos.py, ...)
    ```
-3. Instala las dependencias de Python:
-   ```
-   pip install -r "%APPDATA%\HearthstoneDeckTracker\Plugins\RomperCartas\scripts\requirements.txt"
-   ```
-4. Abre (o reinicia) HDT y activa el plugin en **Opciones → Tracker → Plugins → Romper Cartas (Wild)**.
+3. Abre (o reinicia) HDT y activa el plugin en **Opciones → Tracker → Plugins → Romper Cartas (Wild)**.
 
 La primera vez el plugin baja en segundo plano las imágenes de las cartas que tienes desde [HearthstoneJSON](https://hearthstonejson.com) para poder reconocerlas en pantalla. Son unos minutos y, según el tamaño de tu colección, unos cientos de MB. De cada imagen solo guarda una miniatura (`arte.bin`, unos 8 MB).
 
@@ -72,16 +67,11 @@ La primera vez el plugin baja en segundo plano las imágenes de las cartas que t
 HSGuru tiene una verificación anti-bots, así que esta parte es manual:
 
 1. Abre `https://www.hsguru.com/decks?format=1&rank=legend` en tu navegador y guárdala con **Ctrl+S → "Página web, solo HTML"**.
-2. Ejecuta, desde la carpeta `scripts`:
-   ```
-   python hsguru_decks.py "Wild Decks.htm" "%APPDATA%\HearthstoneDeckTracker\RomperCartas\mazos_hsguru.json"
-   python generar_reglas.py "" "%APPDATA%\HearthstoneDeckTracker\RomperCartas\mazos_hsguru.json"
-   ```
-3. En HDT, menú del plugin → **Actualizar estadísticas ahora**.
+2. En HDT, menú del plugin → **Importar mazos de Leyenda de HSGuru…** y elige el archivo guardado.
 
 ## Compilar desde el código
 
-Requiere el SDK de .NET 8 o más nuevo y HDT instalado: las referencias se toman de `%LOCALAPPDATA%\HearthstoneDeckTracker\current`.
+Requiere el SDK de .NET 8 o más nuevo y HDT instalado: las referencias se toman de `%LOCALAPPDATA%\HearthstoneDeckTracker\current` (se puede cambiar con `-p:HdtDir=<carpeta>`).
 
 ```
 dotnet build src\RomperCartas -c Release -p:Instalar=true   # compila e instala en tu HDT
@@ -93,21 +83,30 @@ dotnet build src\RomperCartas -c Release -p:Instalar=true   # compila e instala 
 ```
 Prueba.exe <coleccion.json>                          # clasifica una colección exportada de HSReplay
 Prueba.exe --reconocer-coleccion <captura.png> <coleccion.json>
+Prueba.exe --reglas <uso_estandar.json> <mazos_hsguru.json> datos\reglas.json   # regenera las reglas que trae el plugin
 ```
+
+Los tests de la lógica que no depende de HDT (reglas, descarga, HSGuru) corren con .NET 8, también en Linux, usando los datos de cartas de HDT:
+
+```
+dotnet test tests\RomperCartas.Tests
+```
+
+Fuera de Windows hay que indicar dónde están HDT y sus datos de cartas: `-p:HdtDir=<carpeta current de HDT>` y la variable `HDT_CARDDEFS` con la ruta de `CardDefs.base.xml`.
 
 ### Estructura
 
 | Ruta | Contenido |
 |---|---|
-| `src/RomperCartas` | El plugin: clasificación, reconocimiento en pantalla, letreros y ventana. |
-| `scripts` | Descarga de estadísticas (`actualizar_datos.py`) y generación de reglas (`generar_reglas.py`, `irrompibles_wiki.py`, `hsguru_decks.py`). |
+| `src/RomperCartas` | El plugin: descarga de estadísticas, generación de reglas, clasificación, reconocimiento en pantalla, letreros y ventana. |
+| `tests/RomperCartas.Tests` | Tests de la generación de reglas, la descarga y la importación de HSGuru. |
 | `datos` | `reglas.json` y `mazos_hsguru.json` que se distribuyen con el plugin. |
 
 ## Fuentes y créditos
 
 - Estadísticas de uso: [HSReplay.net](https://hsreplay.net) (consultas públicas gratuitas).
 - Mazos de Leyenda: [HSGuru](https://www.hsguru.com).
-- Imágenes y datos de cartas: [HearthstoneJSON](https://hearthstonejson.com) y las bibliotecas de [HearthSim](https://github.com/HearthSim) (`hearthstone`, `hearthstone_data`, HearthDb).
+- Imágenes y datos de cartas: [HearthstoneJSON](https://hearthstonejson.com), [HearthSim/hsdata](https://github.com/HearthSim/hsdata) y HearthDb de [HearthSim](https://github.com/HearthSim).
 - Lista de cartas que no se pueden fabricar ni desencantar: [Hearthstone Wiki](https://hearthstone.wiki.gg/wiki/Uncraftable).
 
 Este proyecto no está afiliado a Blizzard Entertainment, HearthSim, HSReplay ni HSGuru. Hearthstone es una marca de Blizzard Entertainment.
@@ -120,4 +119,4 @@ Este proyecto no está afiliado a Blizzard Entertainment, HearthSim, HSReplay ni
 
 ## English summary
 
-HDT plugin that labels every card on your Hearthstone collection page, in-game, with whether it is safe to disenchant for **Wild**. It uses HSReplay play rates, HSGuru Legend decklists, and a list of uncraftable cards (free reward-track and Tavern Pass copies, and similar) that cannot be disenchanted. It recognizes the cards on screen by comparing their art with HearthstoneJSON renders. It needs Python (with `scripts/requirements.txt`) and Firefox, which runs headless with a clean profile to fetch the free stats. See the Spanish sections above for installation (unzip into `%APPDATA%\HearthstoneDeckTracker\Plugins`) and build steps.
+HDT plugin that labels every card on your Hearthstone collection page, in-game, with whether it is safe to disenchant for **Wild**. It uses HSReplay play rates (downloaded with HDT's own HSReplay connection), HSGuru Legend decklists, and a list of uncraftable cards (free reward-track and Tavern Pass copies, and similar) that cannot be disenchanted. Standard sets are derived from HSReplay's Standard stats, and card data comes from what HDT already loads (HearthSim/hsdata). It recognizes the cards on screen by comparing their art with HearthstoneJSON renders. Nothing else is required: no Python and no browser. See the Spanish sections above for installation (unzip into `%APPDATA%\HearthstoneDeckTracker\Plugins`) and build steps.
