@@ -145,9 +145,11 @@ namespace RomperCartas
 			{
 				var mazos = ImportadorHsguru.Extraer(File.ReadAllText(archivoHtml));
 				if (mazos.Count == 0) return Registrar($"No encontré mazos en {Path.GetFileName(archivoHtml)}. Guarda la página de mazos de HSGuru con Ctrl+S.");
-				GuardarJson("mazos_hsguru.json", mazos);
+				var anteriores = LeerJson<List<MazoHsguru>>("mazos_hsguru.json");
+				var suma = ImportadorHsguru.Sumar(anteriores, mazos);
+				GuardarJson("mazos_hsguru.json", suma);
 				var reglas = RegenerarReglas();
-				return Registrar($"{mazos.Count} mazos de HSGuru importados" + (reglas == null ? "" : " · " + reglas));
+				return Registrar($"{mazos.Count} mazos de HSGuru importados ({suma.Count} en total)" + (reglas == null ? "" : " · " + reglas));
 			}
 			catch (Exception e)
 			{

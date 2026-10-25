@@ -49,6 +49,24 @@ namespace RomperCartas
 			return mazos;
 		}
 
+		/// <summary>Suma los mazos de una página nueva a los que ya había, para no perder cartas vistas antes.
+		/// Si un mazo (mismo código) está en las dos, queda la versión nueva.</summary>
+		public static List<MazoHsguru> Sumar(IEnumerable<MazoHsguru> anteriores, IEnumerable<MazoHsguru> nuevos)
+		{
+			var suma = new List<MazoHsguru>();
+			var indice = new Dictionary<string, int>();
+			foreach (var m in anteriores.Concat(nuevos))
+			{
+				if (indice.TryGetValue(m.Codigo, out var i)) suma[i] = m;
+				else
+				{
+					indice[m.Codigo] = suma.Count;
+					suma.Add(m);
+				}
+			}
+			return suma;
+		}
+
 		static List<string> Cartas(string codigo)
 		{
 			try

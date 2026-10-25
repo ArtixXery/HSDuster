@@ -69,6 +69,8 @@ HSGuru tiene una verificación anti-bots, así que esta parte es manual:
 1. Abre `https://www.hsguru.com/decks?format=1&rank=legend` en tu navegador y guárdala con **Ctrl+S → "Página web, solo HTML"**.
 2. En HDT, menú del plugin → **Importar mazos de Leyenda de HSGuru…** y elige el archivo guardado.
 
+Los mazos importados se suman a los que ya había (si un mazo se repite, queda el dato más nuevo), así que ninguna carta deja de contar como vista en Leyenda.
+
 ## Compilar desde el código
 
 Requiere el SDK de .NET 8 o más nuevo y HDT instalado: las referencias se toman de `%LOCALAPPDATA%\HearthstoneDeckTracker\current` (se puede cambiar con `-p:HdtDir=<carpeta>`).

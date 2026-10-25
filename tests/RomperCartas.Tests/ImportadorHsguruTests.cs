@@ -30,6 +30,27 @@ namespace RomperCartas.Tests
 		}
 
 		[Fact]
+		public void Sumar_KeepsPreviousDecksAndUpdatesRepeatedOnes()
+		{
+			var anteriores = new[]
+			{
+				new MazoHsguru { Nombre = "Old A", Codigo = "AAEa", Partidas = 10, Cartas = { "Loatheb" } },
+				new MazoHsguru { Nombre = "Old B", Codigo = "AAEb", Partidas = 20, Cartas = { "Doomsayer" } },
+			};
+			var nuevos = new[]
+			{
+				new MazoHsguru { Nombre = "New B", Codigo = "AAEb", Partidas = 99, Cartas = { "Doomsayer" } },
+				new MazoHsguru { Nombre = "New C", Codigo = "AAEc", Partidas = 5, Cartas = { "Brawl" } },
+			};
+
+			var suma = ImportadorHsguru.Sumar(anteriores, nuevos);
+
+			Assert.Equal(new[] { "AAEa", "AAEb", "AAEc" }, suma.Select(m => m.Codigo));
+			Assert.Equal("New B", suma[1].Nombre);
+			Assert.Equal(99, suma[1].Partidas);
+		}
+
+		[Fact]
 		public void Extraer_KeepsDeckWithInvalidCodeWithoutCards()
 		{
 			var html = "<div class=\"decklist-info\"><a data-clipboard-text=\"### Broken AAEnotadeck\">x</a></div>";
