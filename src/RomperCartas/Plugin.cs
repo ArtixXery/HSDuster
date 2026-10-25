@@ -11,6 +11,7 @@ using Hearthstone_Deck_Tracker.Enums.Hearthstone;
 using Hearthstone_Deck_Tracker.Hearthstone;
 using Hearthstone_Deck_Tracker.Plugins;
 using Hearthstone_Deck_Tracker.Utility;
+using Hearthstone_Deck_Tracker.Utility.Assets;
 using Core = Hearthstone_Deck_Tracker.API.Core;
 
 namespace RomperCartas
@@ -22,7 +23,7 @@ namespace RomperCartas
 			"con su % de uso en HSReplay. Se actualiza solo al abrir sobres y descarga las estadísticas una vez al día.";
 		public string ButtonText => "Abrir lista";
 		public string Author => "ArtixXery";
-		public Version Version => new Version(0, 3, 1);
+		public Version Version => new Version(0, 3, 2);
 		public MenuItem MenuItem { get; private set; }
 
 		Config _cfg;
@@ -32,7 +33,7 @@ namespace RomperCartas
 		Etiquetas _etiquetas;
 		readonly Reconocedor _reconocedor = new Reconocedor();
 		CancellationTokenSource _cancelar;
-		bool _activo, _descargando, _reconociendo, _etiquetasVisibles;
+		bool _activo, _iniciado, _descargando, _reconociendo, _etiquetasVisibles;
 		DateTime _ultimoMana = DateTime.MinValue, _ultimoReconocimiento = DateTime.MinValue;
 
 		// Resultado de la última clasificación
@@ -50,12 +51,13 @@ namespace RomperCartas
 		public void OnLoad()
 		{
 			_activo = true;
+			_iniciado = false;
 			_cancelar = new CancellationTokenSource();
 			Datos.InstalarArchivosIncluidos();
 			_cfg = Datos.LeerJson<Config>("config.json");
 			Datos.GuardarJson("config.json", _cfg);   // deja el archivo con todos los valores para poder editarlo
 			_reglas = Datos.LeerJson<Reglas>("reglas.json");
-			_est = Datos.CargarEstadisticas();
+			_est = new Estadisticas();   // se llena en Iniciar, cuando HDT ya tiene las cartas
 			_reconocedor.Cargar();
 			_etiquetas = new Etiquetas(Core.OverlayCanvas);
 			_aviso = new AvisoProgreso(Core.OverlayCanvas);
@@ -78,15 +80,47 @@ namespace RomperCartas
 
 			CollectionHelpers.Hearthstone.OnCollectionChanged += Recalcular;
 			GameEvents.OnModeChanged.Add(CambioDeModo);
-			if (Datos.HaceFaltaDescargar(_cfg.HorasEntreDescargas)) _ = ActualizarEstadisticas(false);
-			Recalcular();
 			Datos.Log($"Plugin cargado. Reglas del {_reglas.Generado}, {_reglas.Wild.Count} cartas Wild, {_reconocedor.Cantidad} imágenes de cartas.");
+			// HDT carga las cartas en segundo plano al arrancar y puede cargar el plugin antes. Sin cartas, las estadísticas
+			// (que vienen por dbfId) quedarían vacías y todo saldría como "Dudosa · sin estadísticas".
+			if (CardDefsManager.HasLoadedInitialBaseDefs) Iniciar();
+			else
+			{
+				Datos.Log("Esperando a que HDT termine de cargar las cartas…");
+				CardDefsManager.InitialDefsLoaded += CartasCargadas;
+				if (CardDefsManager.HasLoadedInitialBaseDefs) CartasCargadas();   // terminó justo antes de suscribirse
+			}
+		}
+
+		void CartasCargadas()
+		{
+			CardDefsManager.InitialDefsLoaded -= CartasCargadas;
+			Application.Current?.Dispatcher.BeginInvoke(new Action(Iniciar));
+		}
+
+		/// <summary>Carga las estadísticas, descarga si hace falta y clasifica. Solo cuando HDT ya tiene las cartas.</summary>
+		async void Iniciar()
+		{
+			if (!_activo || _iniciado) return;
+			_iniciado = true;
+			try
+			{
+				_est = await Task.Run(Datos.CargarEstadisticas);
+				Datos.Log($"Estadísticas cargadas: {_est.Uso.Count} cartas con uso ({HearthDb.Cards.All.Count} cartas en HDT)");
+				if (Datos.HaceFaltaDescargar(_cfg.HorasEntreDescargas)) _ = ActualizarEstadisticas(false);
+				Recalcular();
+			}
+			catch (Exception e)
+			{
+				Datos.Log("Error al iniciar: " + e);
+			}
 		}
 
 		public void OnUnload()
 		{
 			_activo = false;
 			_cancelar?.Cancel();
+			CardDefsManager.InitialDefsLoaded -= CartasCargadas;
 			CollectionHelpers.Hearthstone.OnCollectionChanged -= Recalcular;
 			_etiquetas?.Quitar();
 			_aviso?.Quitar();

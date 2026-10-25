@@ -7,7 +7,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>RomperCartas</AssemblyName>
     <RootNamespace>RomperCartas</RootNamespace>
-    <Version>0.3.1</Version>
+    <Version>0.3.2</Version>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <HdtDir>$(LOCALAPPDATA)\HearthstoneDeckTracker\current</HdtDir>
