@@ -34,7 +34,7 @@ namespace RomperCartas.Tests
 		{
 			var esperado = DatosHdt.Json("datos/reglas.json");
 
-			var reglas = GeneradorReglas.Generar(Cards.Collectible.Values, new HashSet<CardSet>(EstandarOctubre2026), DatosHdt.NombresHsguru());
+			var reglas = GeneradorReglas.Generar(Cards.Collectible.Values, new HashSet<CardSet>(EstandarOctubre2026));
 
 			Assert.Equal(esperado["estandar"].Values<int>().OrderBy(x => x), reglas.Estandar.OrderBy(x => x));
 			Assert.Equal(esperado["wild"].Values<int>().OrderBy(x => x), reglas.Wild.OrderBy(x => x));
@@ -42,7 +42,7 @@ namespace RomperCartas.Tests
 			Assert.Equal(esperado["irrompible_normal"].Values<int>().OrderBy(x => x), reglas.IrrompibleNormal.OrderBy(x => x));
 			Assert.Equal(esperado["irrompible_dorada"].Values<int>().OrderBy(x => x), reglas.IrrompibleDorada.OrderBy(x => x));
 			Assert.Equal(esperado["dioses_antiguos"].Values<int>().OrderBy(x => x), reglas.DiosesAntiguos.OrderBy(x => x));
-			Assert.Equal(esperado["leyenda"].Values<string>().OrderBy(x => x, System.StringComparer.Ordinal), reglas.Leyenda.OrderBy(x => x, System.StringComparer.Ordinal));
+			Assert.Equal(GeneradorReglas.LeyendaManual.OrderBy(x => x, System.StringComparer.Ordinal), reglas.Leyenda.OrderBy(x => x, System.StringComparer.Ordinal));
 		}
 
 		[Fact]
@@ -66,6 +66,16 @@ namespace RomperCartas.Tests
 		public void SetsEstandar_WithoutStatsReturnsNoSets()
 		{
 			Assert.Empty(GeneradorReglas.SetsEstandar(Cards.Collectible.Values, Uso()));
+		}
+
+		[Fact]
+		public void SonSetsEstandarCreibles_RejectsTooFewOrTooManySets()
+		{
+			Assert.False(GeneradorReglas.SonSetsEstandarCreibles(new[] { CardSet.BE, CardSet.CATACLYSM }));
+			Assert.True(GeneradorReglas.SonSetsEstandarCreibles(EstandarOctubre2026));
+			// What a Wild-shaped answer gives: almost every set has its cards played
+			var todos = Cards.Collectible.Values.Select(c => c.Set).Distinct().ToArray();
+			Assert.False(GeneradorReglas.SonSetsEstandarCreibles(todos));
 		}
 	}
 }

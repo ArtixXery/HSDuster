@@ -59,12 +59,11 @@ class Program
 		}
 		if (args[0] == "--reglas")
 		{
-			// Regenera las reglas que se incluyen con el plugin: Prueba.exe --reglas <uso_estandar.json> <mazos_hsguru.json> <salida>
+			// Regenera las reglas que se incluyen con el plugin: Prueba.exe --reglas <uso_estandar.json> <salida>
 			var sets = GeneradorReglas.SetsEstandar(HearthDb.Cards.Collectible.Values, JObject.Parse(File.ReadAllText(args[1])));
-			var guru = Newtonsoft.Json.JsonConvert.DeserializeObject<List<MazoHsguru>>(File.ReadAllText(args[2]));
-			var nuevas = GeneradorReglas.Generar(HearthDb.Cards.Collectible.Values, new HashSet<HearthDb.Enums.CardSet>(sets), guru.SelectMany(m => m.Cartas));
-			File.WriteAllText(args[3], Newtonsoft.Json.JsonConvert.SerializeObject(nuevas));
-			Console.WriteLine($"Estándar: {string.Join(", ", sets)} · {nuevas.Wild.Count} cartas Wild → {args[3]}");
+			var nuevas = GeneradorReglas.Generar(HearthDb.Cards.Collectible.Values, new HashSet<HearthDb.Enums.CardSet>(sets));
+			File.WriteAllText(args[2], Newtonsoft.Json.JsonConvert.SerializeObject(nuevas));
+			Console.WriteLine($"Estándar: {string.Join(", ", sets)} · {nuevas.Wild.Count} cartas Wild → {args[2]}");
 			return;
 		}
 		var est = Datos.CargarEstadisticas();

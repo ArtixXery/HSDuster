@@ -26,8 +26,5 @@ namespace RomperCartas.Tests
 		public static string Ruta(string relativa) => Path.Combine(AppContext.BaseDirectory, relativa);
 
 		public static JObject Json(string relativa) => JObject.Parse(File.ReadAllText(Ruta(relativa)));
-
-		public static string[] NombresHsguru() =>
-			JArray.Parse(File.ReadAllText(Ruta("datos/mazos_hsguru.json"))).SelectMany(m => m["cartas"].Values<string>()).ToArray();
 	}
 }

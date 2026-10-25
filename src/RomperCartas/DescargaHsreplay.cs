@@ -106,7 +106,7 @@ namespace RomperCartas
 			}
 		}
 
-		static void Guardar(string destino, string texto)
+		internal static void Guardar(string destino, string texto)
 		{
 			var tmp = destino + ".tmp";
 			File.WriteAllText(tmp, texto);

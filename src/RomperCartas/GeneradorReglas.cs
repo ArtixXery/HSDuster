@@ -23,7 +23,8 @@ namespace RomperCartas
 		static readonly Regex DiosesAntiguos = new Regex("C'Thun|N'Zoth|Yogg|Y'Shaarj|Corrupt", RegexOptions.IgnoreCase);
 		static readonly Regex Etiquetas = new Regex("<[^>]+>");
 
-		/// <summary>Cartas vistas en mazos de Leyenda de Wild (revisión manual, octubre de 2026). Se suman las de HSGuru.</summary>
+		/// <summary>Cartas vistas en mazos de Leyenda de Wild (revisión manual, octubre de 2026). Los mazos actuales de Leyenda
+		/// salen de Firestone y se aplican con las estadísticas, no aquí.</summary>
 		public static readonly string[] LeyendaManual =
 		{
 			"Archmage Antonidas", "Astalor Bloodsworn", "Blademaster Okani", "E.T.C., Band Manager", "E.T.C., God of Metal", "Edwin, Defias Kingpin",
@@ -51,14 +52,18 @@ namespace RomperCartas
 				.Where(g => g.Count() * 2 >= tamano[g.Key]).Select(g => g.Key).OrderBy(s => s).ToArray();
 		}
 
-		public static Reglas Generar(IEnumerable<Card> coleccionables, ISet<CardSet> estandar, IEnumerable<string> leyendaExtra)
+		/// <summary>Estándar tiene entre 5 y 12 sets según el momento del año. Fuera de un margen amplio, la respuesta de HSReplay
+		/// no es de Estándar (por ejemplo, datos de Wild darían casi todos los sets) y no se usa.</summary>
+		public static bool SonSetsEstandarCreibles(IReadOnlyCollection<CardSet> sets) => sets.Count >= 3 && sets.Count <= 15;
+
+		public static Reglas Generar(IEnumerable<Card> coleccionables, ISet<CardSet> estandar)
 		{
 			var todas = coleccionables.ToList();
 			var nombresBasico = new HashSet<string>(todas.Where(c => c.Set == CardSet.CORE).Select(Nombre));
 			var r = new Reglas
 			{
 				Generado = DateTime.Today.ToString("yyyy-MM-dd"),
-				Leyenda = new HashSet<string>(LeyendaManual.Concat(leyendaExtra ?? Enumerable.Empty<string>())),
+				Leyenda = new HashSet<string>(LeyendaManual),
 				SetsEstandar = estandar.Select(s => s.ToString()).OrderBy(s => s).ToList(),
 			};
 			foreach (var c in todas)

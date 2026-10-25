@@ -20,9 +20,8 @@
   <ItemGroup>
     <Reference Include="HearthDb"><HintPath>$(HdtDir)\HearthDb.dll</HintPath></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(HdtDir)\Newtonsoft.Json.dll</HintPath></Reference>
-    <Compile Include="..\..\src\RomperCartas\Modelos.cs;..\..\src\RomperCartas\GeneradorReglas.cs;..\..\src\RomperCartas\Irrompibles.cs;..\..\src\RomperCartas\ImportadorHsguru.cs;..\..\src\RomperCartas\DescargaHsreplay.cs" />
+    <Compile Include="..\..\src\RomperCartas\Modelos.cs;..\..\src\RomperCartas\GeneradorReglas.cs;..\..\src\RomperCartas\Irrompibles.cs;..\..\src\RomperCartas\DescargaHsreplay.cs;..\..\src\RomperCartas\Firestone.cs;..\..\src\RomperCartas\Clasificador.cs" />
     <None Include="..\..\datos\reglas.json" Link="datos\reglas.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\datos\mazos_hsguru.json" Link="datos\mazos_hsguru.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

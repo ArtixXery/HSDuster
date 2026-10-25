@@ -123,7 +123,7 @@ namespace RomperCartas
 				}
 
 				var og = reglas.DiosesAntiguos.Contains(dbf);
-				var leyenda = reglas.Leyenda.Contains(carta.Name);
+				var leyenda = reglas.Leyenda.Contains(carta.Name) || (est.Leyenda.TryGetValue(carta.Name, out var enLeyenda) && enLeyenda >= cfg.UmbralLeyenda);
 				var sinDatos = est.Uso.Count == 0;   // sin estadísticas nunca se recomienda romper
 				Categoria cat;
 				if (enMazos || uso.Pct >= cfg.UmbralConservar) cat = Categoria.Conservar;

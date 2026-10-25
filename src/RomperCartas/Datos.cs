@@ -25,7 +25,7 @@ namespace RomperCartas
 			["SHAMAN"] = "Chamán", ["WARLOCK"] = "Brujo", ["WARRIOR"] = "Guerrero",
 		};
 
-		/// <summary>Carpeta donde está el .dll; ahí vienen reglas.json y mazos_hsguru.json de la versión instalada.</summary>
+		/// <summary>Carpeta donde está el .dll; ahí viene el reglas.json de la versión instalada.</summary>
 		public static readonly string CarpetaPlugin = Path.GetDirectoryName(typeof(Datos).Assembly.Location);
 
 		public static string Ruta(string archivo) => Path.Combine(Carpeta, archivo);
@@ -48,9 +48,6 @@ namespace RomperCartas
 						Log($"Reglas actualizadas con las del plugin ({incluida.Generado})");
 					}
 				}
-				var guru = Path.Combine(origen, "mazos_hsguru.json");
-				if (File.Exists(guru) && (!File.Exists(Ruta("mazos_hsguru.json")) || File.GetLastWriteTime(guru) > File.GetLastWriteTime(Ruta("mazos_hsguru.json"))))
-					File.Copy(guru, Ruta("mazos_hsguru.json"), true);
 			}
 			catch (Exception e) { Log("No se pudieron copiar los archivos incluidos: " + e.Message); }
 		}
@@ -85,34 +82,48 @@ namespace RomperCartas
 			File.WriteAllText(Ruta(archivo), JsonConvert.SerializeObject(valor, Formatting.Indented));
 		}
 
-		public static bool HaceFaltaDescargar(int horas) => DescargaHsreplay.Consultas.Any(c =>
-			!File.Exists(Ruta(c.Archivo)) || DateTime.Now - File.GetLastWriteTime(Ruta(c.Archivo)) > TimeSpan.FromHours(horas));
+		static IEnumerable<string> Descargables => DescargaHsreplay.Consultas.Select(c => c.Archivo).Concat(new[] { Firestone.Archivo });
 
-		/// <summary>Descarga las estadísticas de HSReplay con las credenciales de HDT y regenera reglas.json.
-		/// Devuelve un resumen del resultado.</summary>
+		public static bool HaceFaltaDescargar(int horas) => Descargables.Any(a =>
+			!File.Exists(Ruta(a)) || DateTime.Now - File.GetLastWriteTime(Ruta(a)) > TimeSpan.FromHours(horas));
+
+		/// <summary>Descarga los mazos de Leyenda–Diamante de Firestone y las estadísticas de HSReplay (con las credenciales de HDT),
+		/// y regenera reglas.json. Devuelve un resumen del resultado.</summary>
 		public static async Task<string> Descargar(Config cfg, bool forzar, CancellationToken ct = default)
 		{
 			if (!forzar && !HaceFaltaDescargar(cfg.HorasEntreDescargas)) return "Estadísticas al día";
-			CredencialesHsreplay cred;
-			try { cred = await CredencialesHdt.Obtener(); }
-			catch (Exception e)
-			{
-				Log("No se pudieron leer las credenciales de HSReplay de HDT: " + e);
-				return "No se pudo conectar con HSReplay desde HDT (revisa log.txt)";
-			}
-			DescargaHsreplay.Resultado r;
+			var descargados = new List<string>();
+			var errores = new List<string>();
 			using (var handler = new HttpClientHandler { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })
-				r = await new DescargaHsreplay(handler, cred, TimeSpan.FromSeconds(5)).Descargar(Carpeta, DateTime.Today, ct);
-			foreach (var a in r.Descargados) Log($"{a}: ok");
-			foreach (var e in r.Errores) Log("Error al descargar " + e);
-			var reglas = r.Descargados.Contains("uso_estandar.json") ? RegenerarReglas() : null;
-			var resumen = r.Errores.Count == 0 ? "Estadísticas actualizadas"
-				: r.Descargados.Count == 0 ? "No se pudieron descargar las estadísticas (revisa log.txt)"
-				: $"Estadísticas actualizadas a medias: fallaron {r.Errores.Count} consultas (revisa log.txt)";
+			{
+				var errorFirestone = await Firestone.Descargar(handler, Carpeta, DateTime.Today, ct);
+				if (errorFirestone == null) descargados.Add(Firestone.Archivo);
+				else errores.Add(errorFirestone);
+
+				CredencialesHsreplay cred = null;
+				try { cred = await CredencialesHdt.Obtener(); }
+				catch (Exception e)
+				{
+					Log("No se pudieron leer las credenciales de HSReplay de HDT: " + e);
+					errores.Add("HSReplay: sin credenciales de HDT");
+				}
+				if (cred != null)
+				{
+					var r = await new DescargaHsreplay(handler, cred, TimeSpan.FromSeconds(5)).Descargar(Carpeta, DateTime.Today, ct);
+					descargados.AddRange(r.Descargados);
+					errores.AddRange(r.Errores);
+				}
+			}
+			foreach (var a in descargados) Log($"{a}: ok");
+			foreach (var e in errores) Log("Error al descargar " + e);
+			var reglas = descargados.Contains("uso_estandar.json") ? RegenerarReglas() : null;
+			var resumen = errores.Count == 0 ? "Estadísticas actualizadas"
+				: descargados.Count == 0 ? "No se pudieron descargar las estadísticas (revisa log.txt)"
+				: $"Estadísticas actualizadas a medias: {errores.Count} fallaron (revisa log.txt)";
 			return reglas == null ? resumen : resumen + " · " + reglas;
 		}
 
-		/// <summary>Regenera reglas.json con las cartas que tiene HDT, los sets de Estándar de uso_estandar.json y los mazos de HSGuru.
+		/// <summary>Regenera reglas.json con las cartas que tiene HDT y los sets de Estándar de uso_estandar.json.
 		/// Si los datos no alcanzan para saber qué es Estándar, deja las reglas que había.</summary>
 		public static string RegenerarReglas()
 		{
@@ -121,13 +132,12 @@ namespace RomperCartas
 				var ruta = Ruta("uso_estandar.json");
 				if (!File.Exists(ruta)) return null;
 				var sets = GeneradorReglas.SetsEstandar(Cards.Collectible.Values, JObject.Parse(File.ReadAllText(ruta)));
-				if (sets.Length < 3)
+				if (!GeneradorReglas.SonSetsEstandarCreibles(sets))
 				{
-					Log($"Reglas no regeneradas: solo {sets.Length} sets de Estándar en uso_estandar.json");
+					Log($"Reglas no regeneradas: {sets.Length} sets de Estándar en uso_estandar.json no es creíble");
 					return null;
 				}
-				var guru = LeerJson<List<MazoHsguru>>("mazos_hsguru.json");
-				var reglas = GeneradorReglas.Generar(Cards.Collectible.Values, new HashSet<CardSet>(sets), guru.SelectMany(m => m.Cartas));
+				var reglas = GeneradorReglas.Generar(Cards.Collectible.Values, new HashSet<CardSet>(sets));
 				GuardarJson("reglas.json", reglas);
 				return Registrar($"Reglas regeneradas: Estándar = {string.Join(", ", sets)}; {reglas.Wild.Count} cartas Wild");
 			}
@@ -135,26 +145,6 @@ namespace RomperCartas
 			{
 				Log("Error al regenerar las reglas: " + e);
 				return null;
-			}
-		}
-
-		/// <summary>Importa una página de mazos de Leyenda de HSGuru guardada a mano y regenera las reglas.</summary>
-		public static string ImportarHsguru(string archivoHtml)
-		{
-			try
-			{
-				var mazos = ImportadorHsguru.Extraer(File.ReadAllText(archivoHtml));
-				if (mazos.Count == 0) return Registrar($"No encontré mazos en {Path.GetFileName(archivoHtml)}. Guarda la página de mazos de HSGuru con Ctrl+S.");
-				var anteriores = LeerJson<List<MazoHsguru>>("mazos_hsguru.json");
-				var suma = ImportadorHsguru.Sumar(anteriores, mazos);
-				GuardarJson("mazos_hsguru.json", suma);
-				var reglas = RegenerarReglas();
-				return Registrar($"{mazos.Count} mazos de HSGuru importados ({suma.Count} en total)" + (reglas == null ? "" : " · " + reglas));
-			}
-			catch (Exception e)
-			{
-				Log("Error al importar HSGuru: " + e);
-				return "No se pudo importar el archivo de HSGuru (revisa log.txt)";
 			}
 		}
 
@@ -196,6 +186,20 @@ namespace RomperCartas
 					}
 				}
 				catch (Exception e) { Log($"Error leyendo {archivo}: {e.Message}"); }
+			}
+			var rutaFirestone = Ruta(Firestone.Archivo);
+			if (File.Exists(rutaFirestone))
+			{
+				try
+				{
+					foreach (var kv in Firestone.UsoPorCarta(JObject.Parse(File.ReadAllText(rutaFirestone))))
+					{
+						est.Leyenda[kv.Key] = kv.Value;
+						if (!est.Uso.TryGetValue(kv.Key, out var actual) || kv.Value > actual.Pct)
+							est.Uso[kv.Key] = (Math.Round(kv.Value, 2), Firestone.Donde);
+					}
+				}
+				catch (Exception e) { Log($"Error leyendo {Firestone.Archivo}: {e.Message}"); }
 			}
 			var rutaMazos = Ruta("mazos_expansion.json");
 			if (File.Exists(rutaMazos))

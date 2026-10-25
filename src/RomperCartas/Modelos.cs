@@ -22,6 +22,8 @@ namespace RomperCartas
 	{
 		public double UmbralConservar { get; set; } = 5.0;
 		public double UmbralDudosa { get; set; } = 2.0;
+		/// <summary>% de partidas de Leyenda–Diamante (Firestone) desde el que una carta queda al menos como Dudosa.</summary>
+		public double UmbralLeyenda { get; set; } = 0.5;
 		public int HorasEntreDescargas { get; set; } = 24;
 		public bool AbrirEnColeccion { get; set; } = false;
 		public bool MostrarEtiquetas { get; set; } = true;
@@ -30,11 +32,13 @@ namespace RomperCartas
 		public bool SincronizarFiltroMana { get; set; } = true;
 	}
 
-	/// <summary>Uso de cada carta en Wild (por nombre en inglés) y cartas vistas en mazos actuales.</summary>
+	/// <summary>Uso de cada carta en Wild (por nombre en inglés), cartas vistas en mazos actuales y
+	/// % de partidas de Leyenda–Diamante en que aparece cada carta (Firestone).</summary>
 	public class Estadisticas
 	{
 		public Dictionary<string, (double Pct, string Donde)> Uso { get; } = new Dictionary<string, (double, string)>();
 		public HashSet<string> EnMazos { get; } = new HashSet<string>();
+		public Dictionary<string, double> Leyenda { get; } = new Dictionary<string, double>();
 		public DateTime Fecha { get; set; }
 	}
 }
