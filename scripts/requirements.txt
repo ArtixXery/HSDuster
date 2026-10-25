@@ -1,0 +1,3 @@
+selenium>=4.20
+hearthstone>=9.0
+hearthstone_data
