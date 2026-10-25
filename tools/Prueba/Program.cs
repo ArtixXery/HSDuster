@@ -18,7 +18,7 @@ class Program
 			var rec0 = new Reconocedor();
 			rec0.Cargar();
 			Console.WriteLine($"{ids.Count} cartas, {rec0.Cantidad} ya preparadas");
-			rec0.Completar(ids, p => Console.WriteLine(p ?? "listo"), System.Threading.CancellationToken.None).Wait();
+			rec0.Completar(ids, (h, t) => Console.WriteLine(h < t ? $"{h}/{t}" : "listo"), System.Threading.CancellationToken.None).Wait();
 			Console.WriteLine($"{rec0.Cantidad} imágenes en {Datos.Ruta("arte.bin")}");
 			return;
 		}

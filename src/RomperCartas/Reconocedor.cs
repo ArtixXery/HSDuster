@@ -32,7 +32,13 @@ namespace RomperCartas
 
 		readonly string _archivo = Datos.Ruta("arte.bin");
 		readonly ConcurrentDictionary<string, float[]> _rasgos = new ConcurrentDictionary<string, float[]>();
-		readonly (float[] Rasgo, Resultado Res)[] _ultimo = new (float[], Resultado)[8];
+		// Último resultado de cada casilla. Solo vale para la misma versión de _rasgos: si llegan imágenes nuevas,
+		// una casilla que no se pudo reconocer antes se vuelve a intentar aunque la pantalla no haya cambiado.
+		readonly (float[] Rasgo, Resultado Res, int Version)[] _ultimo = new (float[], Resultado, int)[8];
+		int _version;
+		// Las descargas de imágenes se hacen de a una: cada pedido espera al anterior y solo baja lo que siga faltando
+		readonly object _cerrojo = new object();
+		Task _descargas = Task.CompletedTask;
 
 		public int Cantidad => _rasgos.Count;
 
@@ -131,7 +137,11 @@ namespace RomperCartas
 			finally { img.UnlockBits(datos); }
 		}
 
-		public void Agregar(string cardId, Bitmap imagenCarta) => _rasgos[cardId] = Rasgo(imagenCarta, Contenido(imagenCarta));
+		public void Agregar(string cardId, Bitmap imagenCarta)
+		{
+			_rasgos[cardId] = Rasgo(imagenCarta, Contenido(imagenCarta));
+			Interlocked.Increment(ref _version);
+		}
 
 		public void Cargar()
 		{
@@ -151,6 +161,7 @@ namespace RomperCartas
 				}
 			}
 			catch (Exception e) { Datos.Log("No se pudo leer arte.bin: " + e.Message); }
+			Interlocked.Increment(ref _version);
 		}
 
 		void Guardar()
@@ -170,12 +181,24 @@ namespace RomperCartas
 			File.Move(tmp, _archivo);
 		}
 
-		/// <summary>Descarga las imágenes de las cartas que falten y guarda solo su miniatura (unos 2 KB por carta).</summary>
-		public async Task Completar(IEnumerable<string> cardIds, Action<string> progreso, CancellationToken ct)
+		/// <summary>Descarga las imágenes de las cartas que falten y guarda solo su miniatura (unos 2 KB por carta).
+		/// progreso recibe (hechas, total); al terminar se llama con hechas == total.</summary>
+		public Task Completar(IEnumerable<string> cardIds, Action<int, int> progreso, CancellationToken ct)
+		{
+			var ids = cardIds.ToList();
+			lock (_cerrojo)
+			{
+				_descargas = _descargas.ContinueWith(_ => CompletarAhora(ids, progreso, ct), CancellationToken.None,
+					TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
+				return _descargas;
+			}
+		}
+
+		async Task CompletarAhora(List<string> cardIds, Action<int, int> progreso, CancellationToken ct)
 		{
 			var faltan = cardIds.Where(id => !_rasgos.ContainsKey(id)).Distinct().ToList();
 			if (faltan.Count == 0) return;
-			progreso?.Invoke($"Preparando reconocimiento: 0/{faltan.Count} imágenes de cartas…");
+			progreso?.Invoke(0, faltan.Count);
 			var hechas = 0;
 			using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) })
 			using (var sem = new SemaphoreSlim(4))
@@ -194,29 +217,44 @@ namespace RomperCartas
 								using (var ms = new MemoryStream(bytes))
 								using (var img = new Bitmap(ms))
 									_rasgos[id] = Rasgo(img, Contenido(img));
+								Interlocked.Increment(ref _version);
 								break;
 							}
-							catch (HttpRequestException) { await Task.Delay(2000, ct); }
+							// HttpRequestException: error de red; TaskCanceledException sin cancelar: se agotó el tiempo de espera
+							catch (Exception e) when ((e is HttpRequestException || e is TaskCanceledException) && !ct.IsCancellationRequested)
+							{
+								await Task.Delay(2000, ct);
+							}
 						}
 					}
-					catch (Exception e) when (!(e is OperationCanceledException)) { Datos.Log($"Imagen {id}: {e.Message}"); }
+					catch (Exception e) when (!ct.IsCancellationRequested) { Datos.Log($"Imagen {id}: {e.Message}"); }
 					finally
 					{
 						sem.Release();
 						var n = Interlocked.Increment(ref hechas);
-						if (n % 100 == 0) { progreso?.Invoke($"Preparando reconocimiento: {n}/{faltan.Count} imágenes de cartas…"); Guardar(); }
+						if (n % 20 == 0 && n < faltan.Count) progreso?.Invoke(n, faltan.Count);
+						if (n % 100 == 0)
+						{
+							try { Guardar(); }
+							catch (Exception e) { Datos.Log("No se pudo guardar arte.bin: " + e.Message); }
+						}
 					}
 				});
-				await Task.WhenAll(tareas);
+				try { await Task.WhenAll(tareas); }
+				finally
+				{
+					try { Guardar(); }
+					catch (Exception e) { Datos.Log("No se pudo guardar arte.bin: " + e.Message); }
+				}
 			}
-			Guardar();
-			progreso?.Invoke(null);
+			progreso?.Invoke(faltan.Count, faltan.Count);
 			Datos.Log($"Reconocimiento listo: {_rasgos.Count} cartas");
 		}
 
 		/// <summary>Reconoce las 8 casillas de la página. candidatos: cardId → nombre (para no confundir versiones con el mismo arte).</summary>
 		public Resultado[] Reconocer(Bitmap captura, IDictionary<string, string> candidatos, float minimo, float margen)
 		{
+			var version = Volatile.Read(ref _version);
 			var lista = candidatos.Keys.Where(_rasgos.ContainsKey).ToArray();
 			var matriz = lista.Select(id => _rasgos[id]).ToArray();
 			var res = new Resultado[8];
@@ -225,7 +263,7 @@ namespace RomperCartas
 			{
 				var r0 = Rasgo(captura, casillas[s]);
 				var previo = _ultimo[s];
-				if (previo.Rasgo != null && Producto(previo.Rasgo, r0) > 0.995f)
+				if (previo.Rasgo != null && previo.Version == version && Producto(previo.Rasgo, r0) > 0.995f)
 				{
 					res[s] = previo.Res;   // la casilla no cambió
 					continue;
@@ -258,7 +296,7 @@ namespace RomperCartas
 						resultado = new Resultado { CardId = id, Parecido = orden[0].Value, Segundo = segundo, Carta = casillas[s] };
 				}
 				res[s] = resultado;
-				_ultimo[s] = (r0, resultado);
+				_ultimo[s] = (r0, resultado, version);
 			}
 			return res;
 		}

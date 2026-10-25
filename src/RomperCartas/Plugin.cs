@@ -22,7 +22,7 @@ namespace RomperCartas
 			"con su % de uso en HSReplay. Se actualiza solo al abrir sobres y descarga las estadísticas una vez al día.";
 		public string ButtonText => "Abrir lista";
 		public string Author => "ArtixXery";
-		public Version Version => new Version(0, 3, 0);
+		public Version Version => new Version(0, 3, 1);
 		public MenuItem MenuItem { get; private set; }
 
 		Config _cfg;
@@ -40,7 +40,12 @@ namespace RomperCartas
 		Dictionary<string, List<Fila>> _porNombre = new Dictionary<string, List<Fila>>();
 		Dictionary<string, string> _candidatos = new Dictionary<string, string>();   // cardId → nombre en inglés de las cartas que tienes
 		string _estado = "";
-		string _progresoArte;
+		// Progreso de la descarga de imágenes de cartas (lo escribe un hilo de fondo; lo lee OnUpdate)
+		volatile int _arteHechas, _arteTotal;
+		DateTime _arteTerminado = DateTime.MinValue;
+		bool _avisoArte;   // la descarga en curso es grande (la primera vez) y merece el aviso en el juego
+		AvisoProgreso _aviso;
+		const int ImagenesParaAvisar = 50;
 
 		public void OnLoad()
 		{
@@ -53,6 +58,7 @@ namespace RomperCartas
 			_est = Datos.CargarEstadisticas();
 			_reconocedor.Cargar();
 			_etiquetas = new Etiquetas(Core.OverlayCanvas);
+			_aviso = new AvisoProgreso(Core.OverlayCanvas);
 
 			MenuItem = new MenuItem { Header = "Romper cartas" };
 			var abrir = new MenuItem { Header = "Abrir lista" };
@@ -83,6 +89,7 @@ namespace RomperCartas
 			_cancelar?.Cancel();
 			CollectionHelpers.Hearthstone.OnCollectionChanged -= Recalcular;
 			_etiquetas?.Quitar();
+			_aviso?.Quitar();
 			_ventana?.Close();
 			_ventana = null;
 		}
@@ -93,6 +100,7 @@ namespace RomperCartas
 		{
 			if (!_activo) return;
 			var enColeccion = Core.Game.CurrentMode == Mode.COLLECTIONMANAGER;
+			ActualizarAviso();
 
 			// Letreros: reconoce la página como mucho cada 0,8 s mientras estás en la colección
 			if (_cfg.MostrarEtiquetas && enColeccion && User32.IsHearthstoneInForeground())
@@ -113,6 +121,37 @@ namespace RomperCartas
 			}
 			catch { _ventana.FiltroMana(null); }
 		}
+
+		/// <summary>La primera vez se descargan miles de imágenes de cartas: se muestra el avance en el juego
+		/// y un aviso de "listo" durante unos segundos al terminar.</summary>
+		void ActualizarAviso()
+		{
+			var visible = _cfg.MostrarEtiquetas && _avisoArte && User32.IsHearthstoneInForeground();
+			int hechas = _arteHechas, total = _arteTotal;
+			if (visible && total > 0 && hechas < total) _aviso.Mostrar(hechas, total);
+			else if (visible && DateTime.Now - _arteTerminado < TimeSpan.FromSeconds(8)) _aviso.MostrarListo();
+			else _aviso.Ocultar();
+		}
+
+		void ProgresoArte(int hechas, int total)
+		{
+			if (hechas == 0)
+			{
+				// Una descarga chica (cartas de un sobre) no avisa, salvo que siga justo a la grande
+				_avisoArte = total >= ImagenesParaAvisar || (_avisoArte && DateTime.Now - _arteTerminado < TimeSpan.FromSeconds(8));
+				Datos.Log($"Preparando reconocimiento: {total} imágenes de cartas");
+			}
+			_arteTotal = total;
+			_arteHechas = hechas;
+			if (hechas >= total)
+			{
+				_arteTerminado = DateTime.Now;
+				Datos.Log("Imágenes de cartas completas");
+			}
+		}
+
+		string TextoProgresoArte => _arteTotal > 0 && _arteHechas < _arteTotal
+			? $"Preparando reconocimiento: {_arteHechas}/{_arteTotal} imágenes de cartas…" : null;
 
 		void OcultarEtiquetas()
 		{
@@ -217,12 +256,12 @@ namespace RomperCartas
 					$"{(_est.Fecha == default ? "—" : _est.Fecha.ToString("dd/MM/yyyy"))} · Reglas del {_reglas.Generado} · " +
 					$"Umbrales: conservar ≥{_cfg.UmbralConservar}%, dudosa ≥{_cfg.UmbralDudosa}%";
 				if (_reglas.Wild.Count == 0) _estado = "Falta reglas.json en " + Datos.Carpeta + ". " + _estado;
-				if (_progresoArte != null) _estado = _progresoArte + " · " + _estado;
+				if (TextoProgresoArte != null) _estado = TextoProgresoArte + " · " + _estado;
 				if (aviso != null) _estado = aviso + " · " + _estado;
 				_ventana?.Mostrar(_filas, _estado);
 
 				// Imágenes de cartas nuevas (la primera vez son todas: unos minutos en segundo plano)
-				_ = _reconocedor.Completar(_candidatos.Keys, p => { _progresoArte = p; Datos.Log(p ?? "Imágenes de cartas completas"); }, _cancelar.Token);
+				_ = _reconocedor.Completar(_candidatos.Keys, ProgresoArte, _cancelar.Token);
 			}
 			catch (Exception e)
 			{
