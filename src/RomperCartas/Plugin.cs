@@ -22,7 +22,7 @@ namespace RomperCartas
 			"con su % de uso en HSReplay. Se actualiza solo al abrir sobres y descarga las estadísticas una vez al día.";
 		public string ButtonText => "Abrir lista";
 		public string Author => "ArtixXery";
-		public Version Version => new Version(0, 2, 0);
+		public Version Version => new Version(0, 3, 0);
 		public MenuItem MenuItem { get; private set; }
 
 		Config _cfg;
@@ -66,8 +66,11 @@ namespace RomperCartas
 				Datos.GuardarJson("config.json", _cfg);
 				if (!_cfg.MostrarEtiquetas) OcultarEtiquetas();
 			};
+			var hsguru = new MenuItem { Header = "Importar mazos de Leyenda de HSGuru…" };
+			hsguru.Click += (s, e) => ImportarHsguru();
 			MenuItem.Items.Add(abrir);
 			MenuItem.Items.Add(actualizar);
+			MenuItem.Items.Add(hsguru);
 			MenuItem.Items.Add(letreros);
 
 			CollectionHelpers.Hearthstone.OnCollectionChanged += Recalcular;
@@ -181,12 +184,27 @@ namespace RomperCartas
 			try
 			{
 				Recalcular("Actualizando estadísticas en segundo plano…");
-				var r = await Datos.Descargar(_cfg, forzar);
+				var r = await Datos.Descargar(_cfg, forzar, _cancelar.Token);
 				_est = await Task.Run(Datos.CargarEstadisticas);
 				_reglas = Datos.LeerJson<Reglas>("reglas.json");
 				Recalcular(r);
 			}
 			finally { _descargando = false; }
+		}
+
+		/// <summary>Pide la página de mazos de HSGuru guardada a mano (https://www.hsguru.com/decks?format=1&amp;rank=legend, Ctrl+S).</summary>
+		async void ImportarHsguru()
+		{
+			var dialogo = new Microsoft.Win32.OpenFileDialog
+			{
+				Title = "Página de mazos de Leyenda de HSGuru guardada con Ctrl+S",
+				Filter = "Página web (*.htm;*.html)|*.htm;*.html",
+			};
+			if (dialogo.ShowDialog() != true) return;
+			var archivo = dialogo.FileName;
+			var r = await Task.Run(() => Datos.ImportarHsguru(archivo));
+			_reglas = Datos.LeerJson<Reglas>("reglas.json");
+			Recalcular(r);
 		}
 
 		void Recalcular() => Recalcular(null);

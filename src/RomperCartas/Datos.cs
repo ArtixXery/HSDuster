@@ -1,62 +1,22 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
+using HearthDb;
+using HearthDb.Enums;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace RomperCartas
 {
-	/// <summary>Reglas fijas generadas por scripts/generar_reglas.py.</summary>
-	public class Reglas
-	{
-		[JsonProperty("estandar")] public HashSet<int> Estandar { get; set; } = new HashSet<int>();
-		[JsonProperty("wild")] public HashSet<int> Wild { get; set; } = new HashSet<int>();
-		[JsonProperty("basico")] public HashSet<int> Basico { get; set; } = new HashSet<int>();
-		[JsonProperty("irrompible_normal")] public HashSet<int> IrrompibleNormal { get; set; } = new HashSet<int>();
-		[JsonProperty("irrompible_dorada")] public HashSet<int> IrrompibleDorada { get; set; } = new HashSet<int>();
-		[JsonProperty("dioses_antiguos")] public HashSet<int> DiosesAntiguos { get; set; } = new HashSet<int>();
-		[JsonProperty("leyenda")] public HashSet<string> Leyenda { get; set; } = new HashSet<string>();
-		[JsonProperty("generado")] public string Generado { get; set; } = "";
-	}
-
-	public class Config
-	{
-		public double UmbralConservar { get; set; } = 5.0;
-		public double UmbralDudosa { get; set; } = 2.0;
-		public int HorasEntreDescargas { get; set; } = 24;
-		public bool AbrirEnColeccion { get; set; } = false;
-		public bool MostrarEtiquetas { get; set; } = true;
-		public float ParecidoMinimo { get; set; } = 0.85f;   // reconocimiento de cartas en pantalla
-		public float MargenMinimo { get; set; } = 0.12f;
-		public bool SincronizarFiltroMana { get; set; } = true;
-		public string Python { get; set; } = "python";
-		/// <summary>Vacío = el script que viene junto al plugin (scripts\actualizar_datos.py).</summary>
-		public string ScriptActualizar { get; set; } = "";
-	}
-
-	/// <summary>Uso de cada carta en Wild (por nombre en inglés) y cartas vistas en mazos actuales.</summary>
-	public class Estadisticas
-	{
-		public Dictionary<string, (double Pct, string Donde)> Uso { get; } = new Dictionary<string, (double, string)>();
-		public HashSet<string> EnMazos { get; } = new HashSet<string>();
-		public DateTime Fecha { get; set; }
-	}
-
 	public static class Datos
 	{
 		public static readonly string Carpeta = Path.Combine(
 			Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HearthstoneDeckTracker", "RomperCartas");
-
-		// Archivos que deja scripts/actualizar_datos.py
-		static readonly (string Archivo, string Url)[] Consultas =
-		{
-			("uso_14dias.json", "card_list_free LAST_14_DAYS"),
-			("uso_expansion.json", "card_list_free CURRENT_EXPANSION"),
-			("mazos_expansion.json", "list_decks_by_win_rate_v2 CURRENT_EXPANSION"),
-		};
 
 		static readonly Dictionary<string, string> Clases = new Dictionary<string, string>
 		{
@@ -65,14 +25,10 @@ namespace RomperCartas
 			["SHAMAN"] = "Chamán", ["WARLOCK"] = "Brujo", ["WARRIOR"] = "Guerrero",
 		};
 
-		/// <summary>Carpeta donde está el .dll; ahí vienen reglas.json y los scripts de la versión instalada.</summary>
+		/// <summary>Carpeta donde está el .dll; ahí vienen reglas.json y mazos_hsguru.json de la versión instalada.</summary>
 		public static readonly string CarpetaPlugin = Path.GetDirectoryName(typeof(Datos).Assembly.Location);
 
 		public static string Ruta(string archivo) => Path.Combine(Carpeta, archivo);
-
-		public static string Script(Config cfg) => string.IsNullOrWhiteSpace(cfg.ScriptActualizar)
-			? Path.Combine(CarpetaPlugin, "RomperCartas", "scripts", "actualizar_datos.py")
-			: Environment.ExpandEnvironmentVariables(cfg.ScriptActualizar);
 
 		/// <summary>Copia a la carpeta de datos las reglas que vienen con el plugin si faltan o si son más nuevas.</summary>
 		public static void InstalarArchivosIncluidos()
@@ -129,39 +85,75 @@ namespace RomperCartas
 			File.WriteAllText(Ruta(archivo), JsonConvert.SerializeObject(valor, Formatting.Indented));
 		}
 
-		public static bool HaceFaltaDescargar(int horas) =>
-			Consultas.Any(c => !File.Exists(Ruta(c.Archivo)) || DateTime.Now - File.GetLastWriteTime(Ruta(c.Archivo)) > TimeSpan.FromHours(horas));
+		public static bool HaceFaltaDescargar(int horas) => DescargaHsreplay.Consultas.Any(c =>
+			!File.Exists(Ruta(c.Archivo)) || DateTime.Now - File.GetLastWriteTime(Ruta(c.Archivo)) > TimeSpan.FromHours(horas));
 
-		/// <summary>Lanza scripts/actualizar_datos.py, que descarga las estadísticas con Firefox headless (HSReplay rechaza
-		/// clientes que no son navegadores). Devuelve un resumen del resultado.</summary>
-		public static async Task<string> Descargar(Config cfg, bool forzar)
+		/// <summary>Descarga las estadísticas de HSReplay con las credenciales de HDT y regenera reglas.json.
+		/// Devuelve un resumen del resultado.</summary>
+		public static async Task<string> Descargar(Config cfg, bool forzar, CancellationToken ct = default)
 		{
-			var script = Script(cfg);
-			if (!File.Exists(script)) return Registrar($"No encuentro el script de actualización: {script}");
-			var antes = Consultas.Select(c => File.Exists(Ruta(c.Archivo)) ? File.GetLastWriteTime(Ruta(c.Archivo)) : DateTime.MinValue).ToList();
-			var psi = new ProcessStartInfo(cfg.Python, $"\"{script}\"{(forzar ? " --forzar" : "")}")
+			if (!forzar && !HaceFaltaDescargar(cfg.HorasEntreDescargas)) return "Estadísticas al día";
+			CredencialesHsreplay cred;
+			try { cred = await CredencialesHdt.Obtener(); }
+			catch (Exception e)
 			{
-				UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
-				WorkingDirectory = Path.GetDirectoryName(script),
-			};
-			psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+				Log("No se pudieron leer las credenciales de HSReplay de HDT: " + e);
+				return "No se pudo conectar con HSReplay desde HDT (revisa log.txt)";
+			}
+			DescargaHsreplay.Resultado r;
+			using (var handler = new HttpClientHandler { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })
+				r = await new DescargaHsreplay(handler, cred, TimeSpan.FromSeconds(5)).Descargar(Carpeta, DateTime.Today, ct);
+			foreach (var a in r.Descargados) Log($"{a}: ok");
+			foreach (var e in r.Errores) Log("Error al descargar " + e);
+			var reglas = r.Descargados.Contains("uso_estandar.json") ? RegenerarReglas() : null;
+			var resumen = r.Errores.Count == 0 ? "Estadísticas actualizadas"
+				: r.Descargados.Count == 0 ? "No se pudieron descargar las estadísticas (revisa log.txt)"
+				: $"Estadísticas actualizadas a medias: fallaron {r.Errores.Count} consultas (revisa log.txt)";
+			return reglas == null ? resumen : resumen + " · " + reglas;
+		}
+
+		/// <summary>Regenera reglas.json con las cartas que tiene HDT, los sets de Estándar de uso_estandar.json y los mazos de HSGuru.
+		/// Si los datos no alcanzan para saber qué es Estándar, deja las reglas que había.</summary>
+		public static string RegenerarReglas()
+		{
 			try
 			{
-				using (var p = Process.Start(psi))
+				var ruta = Ruta("uso_estandar.json");
+				if (!File.Exists(ruta)) return null;
+				var sets = GeneradorReglas.SetsEstandar(Cards.Collectible.Values, JObject.Parse(File.ReadAllText(ruta)));
+				if (sets.Length < 3)
 				{
-					var salida = p.StandardOutput.ReadToEndAsync();
-					var errores = p.StandardError.ReadToEndAsync();
-					await Task.Run(() => p.WaitForExit(20 * 60 * 1000));
-					if (!p.HasExited) { p.Kill(); return Registrar("La actualización tardó demasiado y se canceló"); }
-					if (p.ExitCode != 0) return Registrar("Error al actualizar: " + (await errores).Trim().Split('\n').LastOrDefault());
+					Log($"Reglas no regeneradas: solo {sets.Length} sets de Estándar en uso_estandar.json");
+					return null;
 				}
+				var guru = LeerJson<List<MazoHsguru>>("mazos_hsguru.json");
+				var reglas = GeneradorReglas.Generar(Cards.Collectible.Values, new HashSet<CardSet>(sets), guru.SelectMany(m => m.Cartas));
+				GuardarJson("reglas.json", reglas);
+				return Registrar($"Reglas regeneradas: Estándar = {string.Join(", ", sets)}; {reglas.Wild.Count} cartas Wild");
 			}
 			catch (Exception e)
 			{
-				return Registrar($"No se pudo ejecutar {cfg.Python}: {e.Message}");
+				Log("Error al regenerar las reglas: " + e);
+				return null;
 			}
-			var nuevos = Consultas.Where((c, i) => File.Exists(Ruta(c.Archivo)) && File.GetLastWriteTime(Ruta(c.Archivo)) > antes[i]).Count();
-			return nuevos > 0 ? "Estadísticas actualizadas" : "Estadísticas sin cambios (revisa log.txt si esperabas datos nuevos)";
+		}
+
+		/// <summary>Importa una página de mazos de Leyenda de HSGuru guardada a mano y regenera las reglas.</summary>
+		public static string ImportarHsguru(string archivoHtml)
+		{
+			try
+			{
+				var mazos = ImportadorHsguru.Extraer(File.ReadAllText(archivoHtml));
+				if (mazos.Count == 0) return Registrar($"No encontré mazos en {Path.GetFileName(archivoHtml)}. Guarda la página de mazos de HSGuru con Ctrl+S.");
+				GuardarJson("mazos_hsguru.json", mazos);
+				var reglas = RegenerarReglas();
+				return Registrar($"{mazos.Count} mazos de HSGuru importados" + (reglas == null ? "" : " · " + reglas));
+			}
+			catch (Exception e)
+			{
+				Log("Error al importar HSGuru: " + e);
+				return "No se pudo importar el archivo de HSGuru (revisa log.txt)";
+			}
 		}
 
 		static string Registrar(string msg)

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tests of the HDT-independent logic. They use HearthDb and the card data from the local HDT install:
+       dotnet test tests/RomperCartas.Tests -p:HdtDir=<HDT "current" folder>
+       and the HDT_CARDDEFS environment variable (CardDefs.base.xml) when it is not in the default APPDATA location. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <HdtDir Condition="'$(HdtDir)' == ''">$(LOCALAPPDATA)\HearthstoneDeckTracker\current</HdtDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="HearthDb"><HintPath>$(HdtDir)\HearthDb.dll</HintPath></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(HdtDir)\Newtonsoft.Json.dll</HintPath></Reference>
+    <Compile Include="..\..\src\RomperCartas\Modelos.cs;..\..\src\RomperCartas\GeneradorReglas.cs;..\..\src\RomperCartas\Irrompibles.cs;..\..\src\RomperCartas\ImportadorHsguru.cs;..\..\src\RomperCartas\DescargaHsreplay.cs" />
+    <None Include="..\..\datos\reglas.json" Link="datos\reglas.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\datos\mazos_hsguru.json" Link="datos\mazos_hsguru.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

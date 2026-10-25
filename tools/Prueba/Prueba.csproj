@@ -8,10 +8,11 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="HearthstoneDeckTracker"><HintPath>$(HdtDir)\HearthstoneDeckTracker.exe</HintPath></Reference>
     <Reference Include="HearthDb"><HintPath>$(HdtDir)\HearthDb.dll</HintPath></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(HdtDir)\Newtonsoft.Json.dll</HintPath></Reference>
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Drawing" />
-    <Compile Include="..\..\src\RomperCartas\Datos.cs;..\..\src\RomperCartas\Clasificador.cs;..\..\src\RomperCartas\Reconocedor.cs" />
+    <Compile Include="..\..\src\RomperCartas\Datos.cs;..\..\src\RomperCartas\Modelos.cs;..\..\src\RomperCartas\GeneradorReglas.cs;..\..\src\RomperCartas\Irrompibles.cs;..\..\src\RomperCartas\ImportadorHsguru.cs;..\..\src\RomperCartas\DescargaHsreplay.cs;..\..\src\RomperCartas\CredencialesHdt.cs;..\..\src\RomperCartas\Clasificador.cs;..\..\src\RomperCartas\Reconocedor.cs" />
   </ItemGroup>
 </Project>
