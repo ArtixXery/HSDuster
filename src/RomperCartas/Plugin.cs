@@ -126,7 +126,8 @@ namespace RomperCartas
 		/// y un aviso de "listo" durante unos segundos al terminar.</summary>
 		void ActualizarAviso()
 		{
-			var visible = _cfg.MostrarEtiquetas && _avisoArte && User32.IsHearthstoneInForeground();
+			// Solo en los menús: en una partida el aviso estorbaría
+			var visible = _cfg.MostrarEtiquetas && _avisoArte && Core.Game.IsInMenu && User32.IsHearthstoneInForeground();
 			int hechas = _arteHechas, total = _arteTotal;
 			if (visible && total > 0 && hechas < total) _aviso.Mostrar(hechas, total);
 			else if (visible && DateTime.Now - _arteTerminado < TimeSpan.FromSeconds(8)) _aviso.MostrarListo();
